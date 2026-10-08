@@ -1,0 +1,1056 @@
+/* ============================================================================
+   Plymouth Theme Generator — editor chrome
+   The canvas itself (`.screen` and its children) reproduces the theme's own
+   colours and is scaled, so it must not inherit any editor styling.
+   ========================================================================= */
+
+:root {
+  --bg:        #16181d;
+  --bg-2:      #1d2027;
+  --bg-3:      #24282f;
+  --bg-4:      #2c3139;
+  --line:      #333a44;
+  --line-soft: #2a3038;
+  --text:      #dfe4ec;
+  --text-dim:  #98a2b3;
+  --text-faint:#6b7484;
+  --accent:    #4da3ff;
+  --accent-dim:#2a5f96;
+  --warn:      #ff8a6b;
+  --frame:     #ff3b30;
+  --ok:        #5fd39a;
+  --sidebar-w: 380px;
+  --topbar-h:  58px;
+  --status-h:  26px;
+  --radius:    6px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--sidebar-w);
+  grid-template-rows: var(--topbar-h) minmax(0, 1fr) var(--status-h);
+  grid-template-areas:
+    "topbar  sidebar"
+    "stage   sidebar"
+    "status  status";
+  height: 100vh;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ============================================================== top bar */
+
+.topbar {
+  grid-area: topbar;
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 16px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+.topbar::-webkit-scrollbar { display: none; }
+
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.tool-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+.tool-label {
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: .09em;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+.tool-buttons {
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  align-self: center;
+}
+
+/* controls */
+.control {
+  appearance: none;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  min-width: 0;
+  width: 100%;
+}
+.control:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px #4da3ff33;
+}
+select.control { cursor: pointer; padding-right: 22px;
+  background-image: linear-gradient(45deg, transparent 50%, var(--text-faint) 50%),
+                    linear-gradient(135deg, var(--text-faint) 50%, transparent 50%);
+  background-position: calc(100% - 13px) 52%, calc(100% - 8px) 52%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+}
+
+.btn {
+  appearance: none;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 11px;
+  cursor: pointer;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.btn:hover { background: var(--bg-4); border-color: #414a56; }
+.btn:active { transform: translateY(1px); }
+.btn[disabled] { opacity: .5; cursor: default; }
+
+/* ============================================================== canvas */
+
+.workspace {
+  grid-area: stage;
+  position: relative;
+  overflow: auto;
+  background:
+    linear-gradient(0deg, #0f1114, #0f1114),
+    repeating-conic-gradient(#171a1f 0% 25%, #14171b 0% 50%) 0 0 / 24px 24px;
+  padding: 28px;
+}
+
+.stage {
+  min-width: 100%;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.frame {
+  position: relative;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px var(--line), 0 18px 50px #000000aa;
+  background: #000;
+}
+
+/* the real theme render — scaled, never interactive */
+.screen {
+  position: absolute;
+  top: 0; left: 0;
+  transform-origin: top left;
+  pointer-events: none;
+  overflow: hidden;
+  background: #000;
+}
+
+
+.overlay {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+}
+.overlay[hidden] { display: none; }
+
+/* ------------------------------------------------- live-view resize handles */
+
+/* The frame already draws a hairline via box-shadow; these bands straddle that
+   edge so the drag target is comfortable without thickening the border. */
+.frame-handles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  user-select: none;
+}
+.fv-handle {
+  position: absolute;
+  pointer-events: auto;
+  touch-action: none;
+}
+/* The live-view frame is the one that resizes the screen itself, so it is red
+   and noticeably fatter than the blue handle on an element box. */
+.fv-n, .fv-s { left: 20px; right: 20px; height: 18px; }
+.fv-w, .fv-e { top: 20px; bottom: 20px; width: 18px; }
+.fv-n { top: -9px;    cursor: ns-resize; }
+.fv-s { bottom: -9px; cursor: ns-resize; }
+.fv-w { left: -9px;   cursor: ew-resize; }
+.fv-e { right: -9px;  cursor: ew-resize; }
+
+/* edges keep only a hover cue — a pip on each would read as eight grips */
+.fv-n::after, .fv-s::after, .fv-w::after, .fv-e::after {
+  content: '';
+  position: absolute;
+  background: var(--frame);
+  opacity: 0;
+}
+.fv-n::after { left: 0; right: 0; top: 8px;    height: 3px; }
+.fv-s::after { left: 0; right: 0; bottom: 8px; height: 3px; }
+.fv-w::after { top: 0; bottom: 0; left: 8px;   width: 3px; }
+.fv-e::after { top: 0; bottom: 0; right: 8px;  width: 3px; }
+
+.fv-nw, .fv-ne, .fv-sw, .fv-se { width: 26px; height: 26px; }
+.fv-nw { top: -13px;    left: -13px;  cursor: nwse-resize; }
+.fv-ne { top: -13px;    right: -13px; cursor: nesw-resize; }
+.fv-sw { bottom: -13px; left: -13px;  cursor: nesw-resize; }
+.fv-se { bottom: -13px; right: -13px; cursor: nwse-resize; }
+
+/* a visible corner pip is the only cue that the border is draggable */
+.fv-nw::after, .fv-ne::after, .fv-sw::after, .fv-se::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #ffffff8c;
+  border-radius: 3px;
+  background: var(--frame);
+}
+.fv-handle:hover::after {
+  opacity: 1;
+  border-color: #fff;
+  background: var(--frame);
+}
+/* the whole border lights up while dragging, so the resized box reads clearly */
+.frame.is-shaping {
+  box-shadow: 0 0 0 2px var(--frame), 0 18px 50px #000000aa;
+}
+
+/* canvas element art */
+.c-el {
+  position: absolute;
+  overflow: hidden;
+}
+.c-el[data-kind="text"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+}
+.c-el-fill { position: absolute; inset: 0; }
+/* An uploaded asset is stretched to the element's own box. Milestone 2 resizes
+   the file to match on export, so what is previewed is what ships. */
+.c-el-img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: fill;
+  pointer-events: none;
+}
+.c-el[data-placeholder="1"] .c-el-fill {
+  background-image:
+    repeating-linear-gradient(45deg, #ffffff1f 0 6px, transparent 6px 12px);
+}
+.c-el-badge {
+  position: absolute;
+  top: 0; left: 0;
+  font: 9px/1.4 var(--mono);
+  padding: 1px 4px;
+  background: #000000b3;
+  color: #ffffffcc;
+  pointer-events: none;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.c-bullet {
+  position: absolute;
+  top: 0;
+  border-radius: 2px;
+}
+
+/* overlay selection chrome — never scaled, so it stays crisp */
+.o-rect {
+  position: absolute;
+  border: 1px solid #4da3ff88;
+  pointer-events: auto;
+  cursor: move;
+}
+.o-rect:hover { border-color: #4da3ffdd; }
+/* locked backdrops are selected from the list, never by clicking them */
+.o-rect.is-locked { pointer-events: none; }
+.o-rect.is-selected {
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 0 0 1px #00000080;
+  /* Deliberately no z-index bump. It lifted a selected backdrop — which is the
+     whole canvas — above every other box, so clicking anything on top of it
+     just re-selected the backdrop. Order in the list decides the stack. */
+}
+.o-rect.is-selected::after { content: ""; position: absolute; inset: 0; background: #4da3ff0d; }
+.o-label {
+  position: absolute;
+  top: -17px; left: -1px;
+  font: 10px/1.5 var(--mono);
+  padding: 1px 5px;
+  background: var(--accent);
+  color: #08111c;
+  font-weight: 600;
+  border-radius: 3px 3px 0 0;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 11;
+}
+.o-rect:not(.is-selected) .o-label { display: none; }
+.o-rect.is-selected .o-label { display: block; }
+.o-handle {
+  position: absolute;
+  right: -5px; bottom: -5px;
+  width: 10px; height: 10px;
+  background: var(--accent);
+  border: 1.5px solid #0b1219;
+  border-radius: 2px;
+  cursor: nwse-resize;
+  z-index: 12;
+}
+
+/* ============================================================= sidebar */
+
+.sidebar {
+  grid-area: sidebar;
+  background: var(--bg-2);
+  border-left: 1px solid var(--line);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-scroll {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1 1 auto;
+  padding-bottom: 40px;
+}
+.sidebar-scroll::-webkit-scrollbar { width: 10px; }
+.sidebar-scroll::-webkit-scrollbar-thumb {
+  background: #3a414c; border-radius: 8px; border: 3px solid var(--bg-2);
+}
+
+.panel {
+  border-bottom: 1px solid var(--line-soft);
+  padding: 12px 14px;
+}
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 9px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text-dim);
+}
+.panel-grow { border-bottom: 0; }
+.field-row { margin-bottom: 8px; }
+.mini {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+
+/* paddings */
+.padding-list { display: flex; flex-direction: column; gap: 7px; }
+.padding-item {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 7px;
+}
+/* the name is a variable, so it reads as code and is renamable in place */
+.padding-name {
+  appearance: none;
+  width: 100%;
+  min-width: 0;
+  font: 11px var(--mono);
+  color: #a9c8ec;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 4px 5px;
+}
+.padding-name:hover { border-color: #414a56; }
+.padding-name:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px #4da3ff33;
+}
+.padding-del {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 1px 3px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 3px;
+}
+.padding-del:hover { color: var(--warn); background: var(--bg-4); }
+.padding-item .control { font: 11px var(--mono); }
+.padding-value {
+  font: 10.5px var(--mono);
+  color: var(--text-dim);
+  min-width: 58px;
+  text-align: right;
+  white-space: nowrap;
+}
+.padding-value.is-error { color: var(--warn); }
+
+/* the action sits opposite its panel heading, which is uppercase and tracked */
+.panel-action {
+  margin-left: auto;
+  appearance: none;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: none;
+  letter-spacing: 0;
+  padding: 3px 8px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.panel-action:hover { color: var(--text); background: var(--bg-4); border-color: #414a56; }
+
+
+/* element list */
+.count {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.show-hidden {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-faint);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.element-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+
+.el {
+  background: var(--bg-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.el.is-selected { border-color: var(--accent); box-shadow: 0 0 0 1px #4da3ff44; }
+.el.is-off { opacity: .45; }
+.el.is-mode-hidden { background: #1f2229; }
+.el.is-mode-hidden .el-name-input,
+.el.is-mode-hidden .el-z,
+.el.is-mode-hidden .el-summary { color: var(--text-faint); }
+.el.is-mode-hidden .el-body { opacity: .55; }
+.el.is-filtered { display: none; }
+
+.el-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 9px;
+}
+.el-enabled {
+  appearance: none;
+  width: 15px; height: 15px;
+  flex: 0 0 auto;
+  border: 1px solid #4a5361;
+  border-radius: 4px;
+  background: var(--bg);
+  cursor: pointer;
+  position: relative;
+}
+.el-enabled:checked { background: var(--accent); border-color: var(--accent); }
+.el-enabled:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px; top: 1px;
+  width: 4px; height: 8px;
+  border: solid #08111c;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+/* The colour square. `.el-swatch` stays the visible pixel (so a transparent
+   element still shows the hatch from background-image, which the `background`
+   shorthand would wipe), and the real colour input is stretched invisibly over
+   it so a plain click opens the OS picker. */
+.el-color {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+.el-swatch {
+  width: 13px; height: 13px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+  border: 1px solid #ffffff2e;
+}
+/* The hatch means "this element has no colour". It must live on a conditional
+   class, not on the base rule, or it draws on top of a chosen colour. */
+.el-swatch.is-empty {
+  background-image: repeating-linear-gradient(45deg, #ffffff2e 0 2px, transparent 2px 4px);
+}
+.el-swatch-picker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 13px;
+  height: 13px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.el-swatch-picker::-webkit-color-swatch-wrapper { padding: 0; }
+.el-swatch-picker::-webkit-color-swatch { border: 0; }
+.el-color-clear {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0 1px;
+  color: var(--text-faint);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.el-color-clear:hover { color: var(--warn); background: var(--bg-4); }
+.el-color-clear[hidden] { display: none; }
+
+/* Use your own file for this element, and go back to the theme's own */
+.el-asset-add,
+.el-asset-del {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0 2px;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 3px;
+}
+.el-asset-add:hover { color: var(--ok); background: var(--bg-4); }
+.el-asset-del:hover { color: var(--warn); background: var(--bg-4); }
+.el-asset-del[hidden] { display: none; }
+/* a row carrying its own file says so, so a scrolled-away + is not the only clue */
+.el.is-asset .el-asset-add { color: var(--ok); }
+/* the name sits over its asset-type subtitle, on two rows */
+.el-head-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.el-name-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+}
+/* the title is the element's variable name, so it reads as code and is editable */
+.el-name-input {
+  appearance: none;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 3px;
+  margin-left: -3px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  color: var(--text);
+  font: 600 12.5px var(--mono);
+}
+.el-name-input:hover { border-color: var(--line); }
+.el-name-input:focus {
+  outline: none;
+  background: var(--bg);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px #4da3ff33;
+}
+.el-kind-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+/* "Corner Image | IMAGE ASSET" — the readable label stays in sentence case.
+   It must never shrink: `overflow: hidden` resolves a flex item's `min-width:
+   auto` to 0, so as a shrinkable item it collapsed to nothing and the long kind
+   label took the whole row and spilled over the z input beside it. The label is
+   short and worth keeping; the kind label is the one that gives way. */
+.el-sub-label {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 0 0 auto;
+}
+.el-sub-sep { font-size: 9px; color: var(--line); flex: 0 0 auto; }
+.el-kind {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+/* the explainer beside the asset type */
+.el-help {
+  appearance: none;
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-faint);
+  font: 700 8px/1 var(--mono);
+  cursor: help;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.el-help:hover,
+.el-help:focus-visible {
+  color: #08111c;
+  background: var(--accent);
+  border-color: var(--accent);
+  outline: none;
+}
+
+/* One shared tip, fixed to the viewport so no row's overflow can clip it. */
+.asset-tip {
+  position: fixed;
+  z-index: 500;
+  width: 290px;
+  padding: 10px 12px;
+  background: #10131a;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 14px 34px #000000b3;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+  pointer-events: none;
+}
+.asset-tip[hidden] { display: none; }
+.asset-tip strong {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+.asset-tip p { margin: 0; }
+.asset-tip code {
+  display: block;
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-soft);
+  font: 10px var(--mono);
+  color: #a9c8ec;
+  word-break: break-word;
+}
+/* Stacking order. Deliberately a bordered control rather than the grey text it
+   used to be, and kept out of the x/y/w/h field grid — z is a plain integer,
+   not a per-tier measurement, so it carries no base/override/formula tag. */
+.el-z {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: 10px var(--mono);
+  color: var(--text-faint);
+}
+.el-z:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px #4da3ff33; }
+.el-z-key { font-weight: 700; }
+.el-z input {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: 10px var(--mono);
+  width: 30px;
+  min-width: 0;
+  padding: 0;
+  text-align: right;
+}
+.el-z input:focus { outline: none; }
+.el-del {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text-faint);
+  cursor: pointer;
+  padding: 1px 4px;
+  font-size: 11px;
+  line-height: 1;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+.el-del:hover { color: var(--warn); background: var(--bg-4); }
+
+.el-body { padding: 0 9px 9px; }
+.el-modes { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.el-modes .mini { flex: 1 1 auto; }
+.el-modes .control { font-size: 11.5px; padding: 4px 7px; }
+
+.el-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 7px;
+}
+.el-field {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 0 4px 0 6px;
+  height: 26px;
+}
+.el-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px #4da3ff33; }
+.el-field.is-error { border-color: var(--warn); }
+.el-field-key {
+  font: 10px var(--mono);
+  color: var(--text-faint);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.el-field input {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  color: var(--text);
+  font: 11.5px var(--mono);
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  height: 100%;
+}
+.el-field input:focus { outline: none; }
+.el-field-tag {
+  font: 9px var(--mono);
+  padding: 1px 4px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  background: var(--bg-3);
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+.el-field-tag:hover { color: var(--text); border-color: var(--line); }
+.el-field-tag.is-fx { background: #2a3f56; color: #9ecbff; }
+.el-field-tag.is-base { background: transparent; }
+.el-field-tag.is-override { background: #4a3a22; color: #ffcf8a; }
+.el-field-tag.is-reset { background: transparent; color: var(--text-faint); font-size: 11px; padding: 0 3px; }
+.el-field-tag.is-reset:hover { color: var(--accent); }
+
+.el-summary {
+  margin-top: 7px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font: 10.5px var(--mono);
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+.el-summary .px { color: var(--ok); }
+.el-summary .err { color: var(--warn); }
+
+/* =========================================================== statusbar */
+
+.statusbar {
+  grid-area: status;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: 0 14px;
+  background: var(--bg-2);
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+}
+.status-item { white-space: nowrap; flex: 0 0 auto; }
+.status-grow { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+.status-mono { font-family: var(--mono); font-size: 10.5px; color: var(--text-faint); }
+/* only visible once the live view has been reshaped off its tier's native box */
+.status-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--accent);
+  cursor: pointer;
+}
+.status-link[hidden] { display: none; }
+.status-link:hover { text-decoration: underline; }
+.statusbar b { color: var(--text); font-weight: 600; }
+
+/* sits in the name row, which already has a flex gap */
+.new-el-tag {
+  font: 9px var(--mono);
+  background: var(--bg-4);
+  color: var(--text-dim);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+/* the add control sits above the element list, where the button used to be */
+.add-select { margin-bottom: 8px; font-size: 11.5px; }
+
+/* the preview-mode control, with its explainer beside it */
+.mode-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.mode-row .control { flex: 1 1 auto; }
+
+/* ------------------------------------------------- multi-mode selection */
+/* One chip per mode the element can appear in, plus All. Several can be on, so
+   a native <select multiple> is avoided: it needs ctrl-click to add, and would
+   stand several rows tall in every one of the twenty-seven rows. */
+.mode-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.mode-chip {
+  appearance: none;
+  font: 10px/1 var(--mono);
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  background: var(--bg-3);
+  color: var(--text-faint);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.mode-chip:hover { border-color: var(--accent-dim); color: var(--text); }
+.mode-chip.is-on {
+  background: var(--accent-dim);
+  border-color: #3d7cc0;
+  color: #fff;
+}
+.mode-chip.is-all {
+  font-weight: 600;
+  letter-spacing: .02em;
+}
+
+/* the live-view string for a text element, above its geometry */
+.el-text-row { margin-bottom: 7px; }
+.el-text-input {
+  width: 100%;
+  font-size: 11.5px;
+}
+
+/* ============================================================= file menu */
+.menu { position: relative; }
+/* `fixed`, not `absolute`: the top bar scrolls horizontally, so it has
+   `overflow: auto hidden`, and an absolutely positioned child would be clipped
+   the moment it extended past the bar. Positioned from the button on open. */
+.menu-list {
+  position: fixed;
+  z-index: 40;
+  min-width: 190px;
+  padding: 4px;
+  background: var(--bg-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 30px #000000aa;
+  display: flex;
+  flex-direction: column;
+}
+.menu-list[hidden] { display: none; }
+.menu-list button {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  padding: 6px 9px;
+  border-radius: 4px;
+  color: var(--text);
+  font: 12px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.menu-list button:hover { background: var(--bg-4); }
+.menu-list .menu-primary { color: var(--ok); }
+.menu-list .menu-primary:hover { background: #1f4536; }
+.menu-sep { height: 1px; margin: 4px 2px; background: var(--line-soft); }
+
+/* the on-demand switch reads as part of the top bar, not as a row control */
+.toggle-inline {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+/* ======================================================= panel collapsing */
+.panel-toggle {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 0 4px 0 0;
+  margin: 0;
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+.panel-toggle:hover { color: var(--text); }
+.panel-body[hidden] { display: none; }
+.panel:has(.panel-body[hidden]) .panel-title { opacity: .75; }
+
+/* ========================================================= element rows */
+/* A comfortable target, not a speck: at 11x10 the arrow was smaller than the
+   pointer, so a click landed on the head beside it and selected the row
+   instead — which reads as "the collapse does nothing". */
+.el-collapse {
+  appearance: none;
+  background: transparent;
+  border: 0;
+  padding: 5px 7px;
+  margin: 0 2px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+  flex: 0 0 auto;
+  min-width: 26px;
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.el-collapse:hover { color: var(--text); background: var(--bg-4); }
+.el.is-collapsed .el-head { border-bottom-color: transparent; }
+
+/* A dropdown has to sit above the canvas. The screen is a transformed element,
+   so it forms its own stacking context and the canvas no longer competes with
+   the chrome for paint order — the top bar must say so explicitly. */
+.topbar { position: relative; z-index: 60; }
+.menu-list { z-index: 70; }
+
+/* the group picker's rows */
+.menu-check {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  font: 12px/1.3 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: var(--text);
+  white-space: nowrap;
+}
+.menu-check:hover { background: var(--bg-4); }
+.menu-check input { margin: 0; }
+.menu-check .menu-check-help {
+  display: block;
+  font-size: 10px;
+  color: var(--text-faint);
+  white-space: normal;
+  max-width: 220px;
+  margin-top: 2px;
+}
+.btn-sm { font-size: 11px; padding: 4px 8px; }
+
+/* The bullet safe zone: an area, so it reads as a bounded run rather than a
+   block of colour. Its dots are its own children. */
+.c-zone {
+  position: absolute;
+  inset: 0;
+  border: 1px dashed #ffffff3d;
+  border-radius: 2px;
+  pointer-events: none;
+}
+.c-el[data-id="bullet-zone"] .c-el-fill { opacity: .25; }
+
+/* The repeating dot is an asset definition: it paints nothing and shows only
+   its own box on the canvas, so the safe zone is the one place bullets appear. */
+.c-el[data-asset-of="1"] { display: none; }
+
+/* A menu item with nothing to do yet */
+.menu-list button[disabled] { opacity: .35; cursor: default; }
+.menu-list button[disabled]:hover { background: transparent; }

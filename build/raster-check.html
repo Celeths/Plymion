@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Raster check — Plymouth theme generator</title>
+<style>
+  :root {
+    --bg: #16181d; --bg-2: #1d2027; --line: #333a44;
+    --text: #dfe4ec; --text-dim: #98a2b3; --text-faint: #6b7484;
+    --accent: #4da3ff; --ok: #5fd39a; --bad: #ff6b6b; --warn: #ffb454;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 20px 60px;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+       color: var(--text-faint); margin: 26px 0 8px; }
+  .sub { color: var(--text-dim); margin: 0 0 6px; }
+  .card { background: var(--bg-2); border: 1px solid var(--line);
+          border-radius: 6px; padding: 12px 14px; }
+  .verdict { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+  .dot.bad { background: var(--bad); }
+  .dot.warn { background: var(--warn); }
+  pre { margin: 0; font: 11.5px/1.45 var(--mono); white-space: pre-wrap;
+        overflow: auto; max-height: 300px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  th { color: var(--text-faint); font-weight: 500; }
+  td.n { font-family: var(--mono); }
+  td.res { font-family: var(--mono); width: 46px; font-weight: 600; }
+  tr.pass td.res { color: var(--ok); }
+  tr.fail td.res { color: var(--bad); }
+  tr.skip td.res { color: var(--warn); }
+  tr.fail { background: #3a1f22; }
+  .muted { color: var(--text-faint); }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  .stat { background: var(--bg-2); border: 1px solid var(--line);
+          border-radius: 6px; padding: 6px 12px; }
+  .stat b { display: block; font-size: 18px; font-weight: 600; }
+  .stat span { font-size: 11px; color: var(--text-faint); }
+</style>
+</head>
+<body>
+
+<h1>Raster pipeline check</h1>
+<p class="sub">
+  Exercises <code>build/raster.js</code> in a real browser. Every fixture is built
+  in this page — canvases encoded to blobs, and one animated GIF inlined as bytes —
+  because the static server's document root is <code>generator/</code> and cannot
+  reach TEST_FILES/.
+</p>
+
+<div class="card" id="verdict">
+  <div class="verdict"><span class="dot" id="vdot"></span><span id="vtext">running…</span></div>
+</div>
+
+<div class="row" id="stats"></div>
+
+<h2>Results</h2>
+<div class="card"><table id="results"><thead>
+  <tr><th>check</th><th>expected</th><th>got</th><th></th></tr>
+</thead><tbody></tbody></table></div>
+
+<h2>Environment and warnings</h2>
+<div class="card"><pre id="env"></pre></div>
+
+<script src="raster.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var tbody = document.querySelector('#results tbody');
+  var dot = document.getElementById('vdot');
+  var vtext = document.getElementById('vtext');
+  var envBox = document.getElementById('env');
+
+  var results = [];
+  var warnings = [];
+
+  function record(name, expected, got, state) {
+    results.push({ name: name, expected: String(expected), got: String(got), state: state });
+    var tr = document.createElement('tr');
+    tr.className = state;
+    tr.innerHTML =
+      '<td class="n">' + name + '</td>' +
+      '<td class="muted">' + String(expected) + '</td>' +
+      '<td class="muted">' + String(got) + '</td>' +
+      '<td class="res">' + (state === 'pass' ? 'PASS' : state === 'skip' ? 'SKIP' : 'FAIL') + '</td>';
+    tbody.appendChild(tr);
+  }
+
+  function eq(name, expected, got) {
+    record(name, expected, got, String(expected) === String(got) ? 'pass' : 'fail');
+  }
+  function ok(name, cond, detail) {
+    record(name, 'true', detail === undefined ? String(!!cond) : detail, cond ? 'pass' : 'fail');
+  }
+  function skip(name, why) {
+    record(name, '—', why, 'skip');
+  }
+
+  /* ------------------------------------------------------------- fixtures */
+
+  function makeCanvas(w, h) {
+    var c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    return c;
+  }
+  function blobOf(canvas, type) {
+    return new Promise(function (resolve) { canvas.toBlob(resolve, type); });
+  }
+  function fileOf(canvas, name, type) {
+    return blobOf(canvas, type).then(function (b) {
+      return new File([b], name, { type: type });
+    });
+  }
+  function bytesOf(blob) {
+    return blob.arrayBuffer().then(function (b) { return new Uint8Array(b); });
+  }
+
+  /* The claim under test is that EVERY output is a PNG, so the signature is
+     checked directly rather than trusting the MIME type on the Blob. */
+  function isPng(blob) {
+    return bytesOf(blob.slice(0, 8)).then(function (b) {
+      return b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47 &&
+             b[4] === 0x0D && b[5] === 0x0A && b[6] === 0x1A && b[7] === 0x0A;
+    });
+  }
+  function dimsOf(blob) {
+    return createImageBitmap(blob).then(function (bmp) {
+      var out = bmp.width + 'x' + bmp.height;
+      bmp.close();
+      return out;
+    });
+  }
+  function pixelOf(blob, x, y) {
+    return createImageBitmap(blob).then(function (bmp) {
+      var c = makeCanvas(bmp.width, bmp.height);
+      var ctx = c.getContext('2d');
+      ctx.drawImage(bmp, 0, 0);
+      bmp.close();
+      var d = ctx.getImageData(x, y, 1, 1).data;
+      return d[0] + ',' + d[1] + ',' + d[2] + ',' + d[3];
+    });
+  }
+  /* A fingerprint of *where the ink is*, not how much of it there is.
+     Summing colour would report two frames of a moving solid shape as
+     identical, because the same pixels are covered either way — which is
+     exactly the false negative this check first produced. Weighting each
+     column by its position moves with the shape. */
+  function signatureOf(frame) {
+    var cols = inkColumns(frame);
+    var sum = 0;
+    for (var x = 0; x < cols.length; x += 1) sum += cols[x] * (x + 1);
+    return sum;
+  }
+
+  /* How much ink is in each column of a frame. */
+  function inkColumns(frame) {
+    var c = makeCanvas(frame.width, frame.height);
+    var ctx = c.getContext('2d');
+    ctx.drawImage(frame.canvas, 0, 0);
+    var d = ctx.getImageData(0, 0, frame.width, frame.height).data;
+    var cols = [];
+    for (var x = 0; x < frame.width; x += 1) {
+      var total = 0;
+      for (var y = 0; y < frame.height; y += 1) {
+        total += d[(y * frame.width + x) * 4 + 3];
+      }
+      cols.push(total);
+    }
+    return cols;
+  }
+
+  /* The first column a frame draws in — the shape's own x position. */
+  function firstInk(frame) {
+    var cols = inkColumns(frame);
+    for (var x = 0; x < cols.length; x += 1) if (cols[x] > 0) return x;
+    return -1;
+  }
+
+  var GIF_2FRAME = 'R0lGODlhCAAIAIEAAP8AAAAAAAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQACgAAACwAAAAACAAIAAAIDwABCBxIsKDBgwgTKkwYEAAh+QQBCgABACwAAAAACAAIAIEAAP8AAAAAAAAAAAAIDwABCBxIsKDBgwgTKkwYEAA7';
+  function gifFile() {
+    var bin = atob(GIF_2FRAME);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i += 1) bytes[i] = bin.charCodeAt(i);
+    return new File([bytes], 'loop.gif', { type: 'image/gif' });
+  }
+
+  var STATIC_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="30" height="20" viewBox="0 0 30 20">' +
+    '<rect width="30" height="20" fill="#00ff00"/></svg>';
+
+  /* A rect that slides across, so sampled frames are visibly different. */
+  var ANIM_SVG = '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="20" viewBox="0 0 40 20">' +
+    '<rect width="12" height="20" fill="#ff0000">' +
+    '<animate attributeName="x" from="0" to="28" dur="200ms" repeatCount="indefinite"/>' +
+    '</rect></svg>';
+
+  function textFile(text, name, type) {
+    return new File([text], name, { type: type });
+  }
+
+  /* ==================================================================== run */
+
+  async function run() {
+    var R = window.PlymRaster;
+
+    /* ------------------------------------------------------- PNG still */
+    var pngCanvas = makeCanvas(40, 20);
+    var pctx = pngCanvas.getContext('2d');
+    pctx.fillStyle = '#3366cc';
+    pctx.fillRect(0, 0, 40, 20);
+    var pngFile = await fileOf(pngCanvas, 'still.png', 'image/png');
+
+    var pngFrames = await R.framesFrom(pngFile);
+    eq('png still: frame count', 1, pngFrames.length);
+    eq('png still: size', '40x20', pngFrames[0].width + 'x' + pngFrames[0].height);
+
+    var pngDesc = await R.describe(pngFile);
+    eq('png still: kind', 'still', pngDesc.kind);
+    eq('png still: type', 'image/png', pngDesc.type);
+
+    var pngBlob = await R.toPng(pngFrames[0]);
+    ok('png still: toPng output is a PNG', await isPng(pngBlob));
+    eq('png still: toPng keeps the size', '40x20', await dimsOf(pngBlob));
+    eq('png still: pixel survives the round trip', '51,102,204,255', await pixelOf(pngBlob, 20, 10));
+
+    /* ------------------------------------------------------ JPEG still */
+    var jpgCanvas = makeCanvas(32, 16);
+    var jctx = jpgCanvas.getContext('2d');
+    jctx.fillStyle = '#00cc44';
+    jctx.fillRect(0, 0, 32, 16);
+    var jpgFile = await fileOf(jpgCanvas, 'still.jpg', 'image/jpeg');
+
+    var jpgFrames = await R.framesFrom(jpgFile);
+    eq('jpeg still: frame count', 1, jpgFrames.length);
+    eq('jpeg still: size', '32x16', jpgFrames[0].width + 'x' + jpgFrames[0].height);
+    eq('jpeg still: type', 'image/jpeg', (await R.describe(jpgFile)).type);
+
+    /* ---------------------------------------------------- transparency */
+    var tCanvas = makeCanvas(20, 20);
+    var tctx = tCanvas.getContext('2d');
+    tctx.clearRect(0, 0, 20, 20);
+    tctx.fillStyle = '#ff0000';
+    tctx.fillRect(0, 0, 10, 10);
+    var tFile = await fileOf(tCanvas, 'clear.png', 'image/png');
+
+    var tFrames = await R.framesFrom(tFile);
+    var tBlob = await R.toPng(tFrames[0]);
+    eq('transparency: the drawn corner is opaque red', '255,0,0,255', await pixelOf(tBlob, 5, 5));
+    eq('transparency: the untouched area stays fully transparent',
+      '0,0,0,0', await pixelOf(tBlob, 15, 15));
+
+    /* Resizing must not flatten it to black either. */
+    var tResized = await R.resizePng(tFrames[0], 40, 40);
+    eq('transparency: survives a resize', '0,0,0,0', await pixelOf(tResized, 30, 30));
+    eq('transparency: resized image is a PNG', true, await isPng(tResized));
+
+    /* ---------------------------------------------------- animated GIF */
+    var gif = gifFile();
+    var gifBytes = new Uint8Array(await gif.arrayBuffer());
+    /* Cross-check the browser's byte parse against the Node suite's. */
+    eq('gif: frame count from the block walk', 2, R.gifFrameCount(gifBytes));
+    eq('gif: logical size from the header', '8x8',
+      R.gifLogicalSize(gifBytes).width + 'x' + R.gifLogicalSize(gifBytes).height);
+
+    var gifDesc = await R.describe(gif);
+    eq('gif: kind', 'frames', gifDesc.kind);
+    eq('gif: animated', 'true', String(gifDesc.animated));
+
+    var canDecodeGif = false;
+    if (typeof window.ImageDecoder === 'function') {
+      try { canDecodeGif = await window.ImageDecoder.isTypeSupported('image/gif'); }
+      catch (e) { canDecodeGif = false; }
+    }
+
+    if (canDecodeGif) {
+      var gifFrames = await R.framesFrom(gif);
+      eq('gif: frame count', 2, gifFrames.length);
+      eq('gif: frame size', '8x8', gifFrames[0].width + 'x' + gifFrames[0].height);
+      var f0 = await R.toPng(gifFrames[0]);
+      var f1 = await R.toPng(gifFrames[1]);
+      var p0 = await pixelOf(f0, 4, 4);
+      var p1 = await pixelOf(f1, 4, 4);
+      eq('gif: frame 1 is the first palette colour', '255,0,0,255', p0);
+      eq('gif: frame 2 is the second, so the order is kept', '0,0,255,255', p1);
+    } else {
+      skip('gif: frame count', 'ImageDecoder cannot read GIF here');
+      skip('gif: frame pixels', 'ImageDecoder cannot read GIF here');
+      /* The documented fallback must still produce something usable, loudly. */
+      var warned = [];
+      var fallback = await R.framesFrom(gif, { onWarn: function (m) { warned.push(m); } });
+      eq('gif fallback: still yields a frame', 1, fallback.length);
+      ok('gif fallback: warns rather than failing silently',
+        warned.length === 1, warned.length + ' warning(s)');
+    }
+
+    /* --------------------------------------------------------- static SVG */
+    var svgFile = textFile(STATIC_SVG, 'mark.svg', 'image/svg+xml');
+    eq('static svg: kind', 'still', (await R.describe(svgFile)).kind);
+    var svgFrames = await R.framesFrom(svgFile, { width: 60, height: 40 });
+    eq('static svg: frame count', 1, svgFrames.length);
+    eq('static svg: rasterised at the requested size', '60x40',
+      svgFrames[0].width + 'x' + svgFrames[0].height);
+    var svgBlob = await R.toPng(svgFrames[0]);
+    ok('static svg: output is a PNG', await isPng(svgBlob));
+    eq('static svg: the fill rasterised', '0,255,0,255', await pixelOf(svgBlob, 30, 20));
+
+    /* An SVG with no width/height of its own must refuse rather than guess. */
+    var noSize = textFile('<svg xmlns="http://www.w3.org/2000/svg"><rect width="4" height="4"/></svg>',
+      'bare.svg', 'image/svg+xml');
+    var sizeErr = null;
+    try { await R.framesFrom(noSize); } catch (e) { sizeErr = e.message; }
+    ok('svg with no size at all is refused clearly',
+      sizeErr && /width and height/.test(sizeErr), sizeErr);
+
+    /* ------------------------------------------------------ animated SVG */
+    var animFile = textFile(ANIM_SVG, 'spin.svg', 'image/svg+xml');
+    var animDesc = await R.describe(animFile);
+    eq('animated svg: kind', 'frames', animDesc.kind);
+    eq('animated svg: animated', 'true', String(animDesc.animated));
+    eq('animated svg: its own duration is read', 200, R.svgDurationMs(ANIM_SVG));
+
+    var animFrames = await R.framesFrom(animFile, { width: 40, height: 20, frames: 6 });
+    eq('animated svg: sampled frame count', 6, animFrames.length);
+    eq('animated svg: every frame is the requested size', true,
+      animFrames.every(function (f) { return f.width === 40 && f.height === 20; }));
+
+    var sigs = animFrames.map(signatureOf);
+    ok('animated svg: six distinct sampled frames', new Set(sigs).size === 6,
+      new Set(sigs).size + ' distinct of ' + sigs.length);
+
+    /* The strongest statement available: the shape actually travels across the
+       sequence, one frame at a time, rather than the frames merely differing. */
+    var positions = animFrames.map(firstInk);
+    var advancing = positions.every(function (p, i) { return i === 0 || p > positions[i - 1]; });
+    ok('animated svg: the shape advances across the frames', advancing,
+      'first inked column per frame: ' + positions.join(', '));
+
+    /* ------------------------------------------------------- placeholders */
+    var ph = await R.placeholderPng('#ff0000', 12, 8);
+    ok('placeholder: output is a PNG', await isPng(ph));
+    eq('placeholder: size', '12x8', await dimsOf(ph));
+    eq('placeholder: filled with the given colour', '255,0,0,255', await pixelOf(ph, 6, 4));
+
+    var phBlack = await R.placeholderPng(null, 6, 6);
+    eq('placeholder: no colour falls back to black', '0,0,0,255', await pixelOf(phBlack, 3, 3));
+    eq('placeholder: and is still a PNG', true, await isPng(phBlack));
+
+    var phEmpty = await R.placeholderPng('', 4, 4);
+    eq('placeholder: an empty colour is black too', '0,0,0,255', await pixelOf(phEmpty, 2, 2));
+
+    var phBad = await R.placeholderPng('not-a-colour', 4, 4);
+    eq('placeholder: an unparseable colour does not throw, and lands on black',
+      '0,0,0,255', await pixelOf(phBad, 2, 2));
+
+    var phNamed = await R.placeholderPng('darkcyan', 4, 4);
+    eq('placeholder: a CSS colour name works', '0,139,139,255', await pixelOf(phNamed, 2, 2));
+
+    /* ------------------------------------------------------------ resizing */
+    var big = await R.resizePng(pngFrames[0], 100, 50);
+    eq('resize: upscale changes the dimensions', '100x50', await dimsOf(big));
+    ok('resize: upscale output is a PNG', await isPng(big));
+
+    var small = await R.resizePng(pngFrames[0], 10, 5);
+    eq('resize: downscale changes the dimensions', '10x5', await dimsOf(small));
+
+    var odd = await R.resizePng(pngFrames[0], 33.7, 20.2);
+    eq('resize: fractional targets round to whole pixels', '34x20', await dimsOf(odd));
+
+    var zero = await R.resizePng(pngFrames[0], 0, 0);
+    eq('resize: a zero target is clamped to 1x1 rather than throwing', '1x1', await dimsOf(zero));
+
+    var neg = await R.resizePng(pngFrames[0], -20, -20);
+    eq('resize: a negative target is clamped too', '1x1', await dimsOf(neg));
+
+    /* Resizing from a bare bitmap and from a Blob-backed bitmap both work. */
+    var bitmap = await createImageBitmap(pngBlob);
+    var fromBitmap = await R.resizePng(bitmap, 20, 10);
+    eq('resize: accepts a bare ImageBitmap', '20x10', await dimsOf(fromBitmap));
+    bitmap.close();
+
+    /* ------------------------------------------------------- unsupported */
+    var refused = null;
+    try { await R.framesFrom(new File(['x'], 'a.bmp', { type: 'image/bmp' })); }
+    catch (e) { refused = e.message; }
+    ok('an unsupported type is refused by name',
+      refused && /image\/bmp/.test(refused), refused);
+    ok('and the message names the accepted formats',
+      refused && /PNG, JPEG, GIF and SVG/.test(refused), '');
+
+    var describeRefused = null;
+    try { await R.describe(new File(['x'], 'a.webp', { type: 'image/webp' })); }
+    catch (e) { describeRefused = e.message; }
+    ok('describe refuses an unsupported type too',
+      describeRefused && /image\/webp/.test(describeRefused), describeRefused);
+  }
+
+  /* ------------------------------------------------------------- reporting */
+
+  function finish(err) {
+    var failed = results.filter(function (r) { return r.state === 'fail'; }).length;
+    var skipped = results.filter(function (r) { return r.state === 'skip'; }).length;
+
+    if (err) {
+      dot.className = 'dot bad';
+      vtext.textContent = 'the check itself threw: ' + (err && err.message || err);
+      warnings.push('THREW: ' + (err && err.stack || err));
+    } else if (failed) {
+      dot.className = 'dot bad';
+      vtext.textContent = failed + ' of ' + results.length + ' checks failed';
+    } else if (skipped) {
+      dot.className = 'dot warn';
+      vtext.textContent = (results.length - skipped) + ' checks passed, ' + skipped + ' skipped';
+    } else {
+      dot.className = 'dot';
+      vtext.textContent = results.length + ' checks passed';
+    }
+
+    var stats = document.getElementById('stats');
+    [
+      ['passed', results.filter(function (r) { return r.state === 'pass'; }).length],
+      ['failed', failed],
+      ['skipped', skipped],
+      ['total', results.length]
+    ].forEach(function (pair) {
+      var d = document.createElement('div');
+      d.className = 'stat';
+      d.innerHTML = '<b>' + pair[1] + '</b><span>' + pair[0] + '</span>';
+      stats.appendChild(d);
+    });
+
+    var env = [
+      'OffscreenCanvas:  ' + (typeof window.OffscreenCanvas === 'function' ? 'available' : 'ABSENT — falling back to a DOM canvas'),
+      'ImageDecoder:     ' + (typeof window.ImageDecoder === 'function' ? 'available' : 'ABSENT — GIFs will decode one frame'),
+      'createImageBitmap: ' + (typeof window.createImageBitmap === 'function' ? 'available' : 'ABSENT'),
+      'userAgent:        ' + navigator.userAgent
+    ];
+    if (warnings.length) env.push('', 'warnings:', warnings.join('\n'));
+    envBox.textContent = env.join('\n');
+
+    window.__rasterCheck = {
+      done: true,
+      passed: results.filter(function (r) { return r.state === 'pass'; }).length,
+      failed: failed,
+      skipped: skipped,
+      total: results.length,
+      results: results,
+      warnings: warnings,
+      threw: err ? String(err && err.message || err) : null
+    };
+  }
+
+  if (!window.PlymRaster) {
+    finish(new Error('raster.js did not load'));
+    return;
+  }
+
+  run().then(function () { finish(null); }, function (err) { finish(err); });
+})();
+</script>
+</body>
+</html>

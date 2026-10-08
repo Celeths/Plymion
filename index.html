@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plymouth Theme Generator</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- ============================================================ top bar -->
+<header class="topbar">
+  <div class="tools">
+    <div class="tool-group">
+      <span class="tool-label">Screen</span>
+      <select id="tierSelect" class="control" aria-label="Screen size"></select>
+    </div>
+
+    <div class="tool-group">
+      <span class="tool-label">Preview mode</span>
+      <div class="mode-row">
+        <select id="modeSelect" class="control"></select>
+        <button type="button" id="modeHelp" class="el-help"
+                aria-label="What is this preview mode?">?</button>
+      </div>
+    </div>
+
+    <div class="tool-group">
+      <span class="tool-label">Zoom</span>
+      <select id="zoomSelect" class="control">
+        <option value="fit">Fit</option>
+        <option value="0.25">25%</option>
+        <option value="0.5">50%</option>
+        <option value="0.75">75%</option>
+        <option value="1">100%</option>
+      </select>
+    </div>
+
+    <div class="tool-group">
+      <div class="mode-row">
+        <span class="tool-label">On demand</span>
+        <button type="button" id="onDemandHelp" class="el-help"
+                aria-label="What does On demand show?">?</button>
+      </div>
+      <div class="mode-row">
+        <label class="toggle-inline"><input type="checkbox" id="onDemandToggle"> Show all</label>
+        <div class="menu">
+          <button type="button" id="demandBtn" class="btn btn-sm"
+                  aria-haspopup="true" aria-expanded="false">Groups &#9662;</button>
+          <div class="menu-list" id="demandMenu" role="menu" hidden></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="tool-group tool-buttons">
+      <div class="menu">
+        <button type="button" id="fileBtn" class="btn"
+                aria-haspopup="true" aria-expanded="false">File &#9662;</button>
+        <div class="menu-list" id="fileMenu" role="menu" hidden>
+          <button type="button" id="undoBtn" role="menuitem" disabled>Undo</button>
+          <button type="button" id="redoBtn" role="menuitem" disabled>Redo</button>
+          <div class="menu-sep"></div>
+          <button type="button" id="importBtn" role="menuitem">Import&#8230;</button>
+          <button type="button" id="saveBtn" role="menuitem">Save</button>
+          <button type="button" id="exportBtn" role="menuitem">Export JSON</button>
+          <div class="menu-sep"></div>
+          <button type="button" id="generateBtn" role="menuitem" class="menu-primary">Generate theme</button>
+          <div class="menu-sep"></div>
+          <button type="button" id="resetBtn" role="menuitem">Reset</button>
+        </div>
+      </div>
+      <!-- the real controls behind Import and the per-element + buttons -->
+      <input type="file" id="importFile" accept=".plymeta,application/json" hidden>
+      <input type="file" id="assetFile" hidden>
+    </div>
+  </div>
+</header>
+
+<!-- ============================================================ canvas -->
+<main class="workspace">
+  <div class="stage" id="stage">
+    <div class="frame" id="frame">
+      <div class="screen" id="screen"></div>
+      <div class="overlay" id="overlay"></div>
+      <!-- last child, so the resize handles sit above the element boxes -->
+      <div class="frame-handles" id="frameHandles"></div>
+    </div>
+  </div>
+</main>
+
+<!-- =========================================================== sidebar -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-scroll">
+
+    <section class="panel">
+      <h2 class="panel-title">Theme</h2>
+      <div class="field-row">
+        <label class="mini">Name<input type="text" id="themeName" class="control"></label>
+      </div>
+      <div class="field-row">
+        <label class="mini">Description<input type="text" id="themeDesc" class="control"></label>
+      </div>
+      <div class="field-row">
+        <label class="mini">Refresh rate<input type="number" id="themeRefresh" class="control" min="1" step="1"></label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2 class="panel-title">
+        <button type="button" id="paddingToggle" class="panel-toggle"
+                aria-expanded="true" title="Collapse this section">&#9662;</button>
+        Paddings
+        <button type="button" id="addPaddingBtn" class="panel-action">+ New padding</button>
+      </h2>
+      <div id="paddingBody" class="panel-body">
+        <div id="paddingList" class="padding-list"></div>
+      </div>
+    </section>
+
+    <section class="panel panel-grow">
+      <h2 class="panel-title">
+        Elements <span class="count" id="elementCount"></span>
+        <label class="show-hidden"><input type="checkbox" id="onlyShown"> only shown</label>
+      </h2>
+      <select id="addSelect" class="control add-select"
+              title="Add an element from the theme's catalogue"></select>
+      <ul class="element-list" id="elementList"></ul>
+    </section>
+
+  </div>
+</aside>
+
+<!-- ========================================================== statusbar -->
+<footer class="statusbar">
+  <span id="statusTier" class="status-item"></span>
+  <span id="statusSel" class="status-item status-grow"></span>
+  <span id="statusPixels" class="status-item status-mono"></span>
+  <button type="button" id="shapeReset" class="status-item status-link" hidden>&#8634; native shape</button>
+  <span id="statusCounts" class="status-item"></span>
+</footer>
+
+<!-- One shared asset tip. Deliberately outside the sidebar: rows clip their own
+     overflow, and the sidebar scrolls, so a tip anchored inside a row would be
+     cut off. Positioned against whichever ? opened it. -->
+<div id="assetTip" class="asset-tip" role="tooltip" hidden></div>
+
+
+<script src="expr.js"></script>
+<script src="model.js"></script>
+<!-- milestone 2: the generator. Loaded before app.js so the button can call it. -->
+<script src="build/placement.js"></script>
+<script src="build/script.js"></script>
+<script src="build/theme.js"></script>
+<script src="build/raster.js"></script>
+<script src="build/zip.js"></script>
+<script src="build/output.js"></script>
+<script src="build/generate.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

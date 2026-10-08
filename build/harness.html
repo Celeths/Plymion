@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Generator harness — Plymouth theme generator</title>
+<style>
+  :root {
+    --bg: #16181d; --bg-2: #1d2027; --line: #333a44;
+    --text: #dfe4ec; --text-dim: #98a2b3; --text-faint: #6b7484;
+    --accent: #4da3ff; --ok: #5fd39a; --bad: #ff6b6b; --warn: #ffb454;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 18px 20px 60px;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em;
+       color: var(--text-faint); margin: 26px 0 8px; }
+  .sub { color: var(--text-dim); margin: 0 0 6px; }
+  .card { background: var(--bg-2); border: 1px solid var(--line);
+          border-radius: 6px; padding: 12px 14px; }
+  .verdict { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--ok); }
+  .dot.bad { background: var(--bad); }
+  .dot.warn { background: var(--warn); }
+  pre { margin: 0; font: 11.5px/1.45 var(--mono); white-space: pre;
+        overflow: auto; max-height: 460px; }
+  table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--line); }
+  th { color: var(--text-faint); font-weight: 500; }
+  td.k { font-family: var(--mono); }
+  .pill { display: inline-block; padding: 1px 6px; border-radius: 3px;
+          font: 10.5px var(--mono); background: #2c3139; color: var(--text-dim); }
+  .pill.art { background: #2a5f96; color: #fff; }
+  .pill.placeholder { background: #3a3f48; }
+  .pill.script, .pill.descriptor { background: #1f4536; color: var(--ok); }
+  .muted { color: var(--text-faint); }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+  .stat { background: var(--bg-2); border: 1px solid var(--line);
+          border-radius: 6px; padding: 6px 12px; }
+  .stat b { display: block; font-size: 18px; font-weight: 600; }
+  .stat span { font-size: 11px; color: var(--text-faint); }
+</style>
+</head>
+<body>
+
+<h1>Generator harness</h1>
+<p class="sub">
+  Runs the milestone&nbsp;2 emitter against the default document and shows what it
+  produces. Nothing here is part of the app — it exists so the script and the file
+  plan can be read and checked without generating a whole theme.
+</p>
+
+<div class="card" id="verdict">
+  <div class="verdict"><span class="dot" id="vdot"></span><span id="vtext">running…</span></div>
+</div>
+
+<div class="row" id="stats"></div>
+
+<h2>File plan</h2>
+<div class="card"><table id="files"><thead>
+  <tr><th>path</th><th>kind</th><th>size</th><th>notes</th></tr>
+</thead><tbody></tbody></table></div>
+
+<h2>Errors and unplaced</h2>
+<div class="card"><pre id="errors">—</pre></div>
+
+<h2>Emitted script</h2>
+<div class="card"><pre id="script"></pre></div>
+
+<script src="../expr.js"></script>
+<script src="../model.js"></script>
+<script src="placement.js"></script>
+<script src="script.js"></script>
+<script src="theme.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var out = document.getElementById('script');
+  var errBox = document.getElementById('errors');
+  var tbody = document.querySelector('#files tbody');
+  var dot = document.getElementById('vdot');
+  var vtext = document.getElementById('vtext');
+
+  function fail(where, err) {
+    dot.className = 'dot bad';
+    vtext.textContent = where + ' threw: ' + err.message;
+    out.textContent = err.stack || String(err);
+    throw err;
+  }
+
+  var missing = ['PlymModel', 'PlymPlacement', 'PlymScript', 'PlymTheme']
+    .filter(function (n) { return !window[n]; });
+  if (missing.length) {
+    dot.className = 'dot bad';
+    vtext.textContent = 'not loaded: ' + missing.join(', ');
+    return;
+  }
+
+  var state, built;
+  try {
+    state = window.PlymModel.defaultState();
+    built = window.PlymTheme.planFiles(state);
+  } catch (err) {
+    fail('planFiles', err);
+    return;
+  }
+
+  /* ---------------------------------------------------------------- verdict */
+
+  var overrides = built.overrides || [];
+  if (built.errors.length) {
+    dot.className = 'dot bad';
+    vtext.textContent = built.errors.length + ' error(s) in the document';
+  } else if (overrides.length) {
+    dot.className = 'dot warn';
+    vtext.textContent = 'emitted cleanly, with ' + overrides.length + ' per-tier pin(s) placed';
+  } else {
+    dot.className = 'dot';
+    vtext.textContent = 'emitted cleanly — ' + built.files.length + ' files, no errors';
+  }
+
+  var byKind = {};
+  built.files.forEach(function (f) { byKind[f.kind] = (byKind[f.kind] || 0) + 1; });
+
+  var stats = document.getElementById('stats');
+  [
+    ['elements', state.elements.length],
+    ['files', built.files.length],
+    ['placeholders', byKind.placeholder || 0],
+    ['supplied art', byKind.art || 0],
+    ['script lines', built.text.split('\n').length]
+  ].forEach(function (pair) {
+    var d = document.createElement('div');
+    d.className = 'stat';
+    d.innerHTML = '<b>' + pair[1] + '</b><span>' + pair[0] + '</span>';
+    stats.appendChild(d);
+  });
+
+  /* ------------------------------------------------------------- file table */
+
+  built.files.forEach(function (f) {
+    var tr = document.createElement('tr');
+    var notes = [];
+    if (f.kind === 'placeholder') {
+      notes.push(Math.round(f.width) + '×' + Math.round(f.height));
+      if (f.colour) notes.push(f.colour);
+      else notes.push('no colour — black');
+    }
+    if (f.tier) notes.push(f.tier);
+    if (f.animated) notes.push('animated');
+    tr.innerHTML =
+      '<td class="k">' + f.path + '</td>' +
+      '<td><span class="pill ' + f.kind + '">' + f.kind + '</span></td>' +
+      '<td class="muted">' + (f.text ? f.text.length + ' B' : Math.round(f.width) + '×' + Math.round(f.height)) + '</td>' +
+      '<td class="muted">' + notes.join(' · ') + '</td>';
+    tbody.appendChild(tr);
+  });
+
+  /* ----------------------------------------------------------------- errors */
+
+  if (!built.errors.length && !overrides.length) {
+    errBox.textContent = 'none';
+  } else {
+    errBox.textContent = built.errors.map(function (e) { return 'error: ' + e; })
+      .concat(overrides.map(function (o) {
+        return 'pin:   ' + o.where + ' = ' + o.expr + '  (for ' + o.tier + ')';
+      })).join('\n');
+  }
+
+  out.textContent = built.text;
+
+  /* Exposed so the page can be driven from outside without scraping. */
+  window.__harness = { state: state, built: built };
+})();
+</script>
+</body>
+</html>
